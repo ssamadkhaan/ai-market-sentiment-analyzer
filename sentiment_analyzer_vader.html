@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Market Sentiment Analyzer — VADER</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#121212;--surface:#111418;--surface2:#181c22;--surface3:#1e2430;
+  --border:#252b36;--border2:#2e3644;
+  --text:#e8edf5;--text2:#8a95a8;--text3:#4a5568;
+  --bull:#00e5a0;--bear:#ff4560;--neutral:#f0b429;--accent:#3d9cf5;
+  --bull-dim:rgba(0,229,160,0.12);--bear-dim:rgba(255,69,96,0.12);
+  --neutral-dim:rgba(240,180,41,0.12);--accent-dim:rgba(61,156,245,0.1);
+}
+body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(61,156,245,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(61,156,245,0.03) 1px,transparent 1px);
+  background-size:48px 48px;pointer-events:none;z-index:0;
+}
+.wrap{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:0 1.2rem 5rem;}
+header{padding:2.5rem 0 2rem;border-bottom:1px solid var(--border);margin-bottom:2rem;display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:1rem;}
+.logo{display:flex;align-items:center;gap:12px;}
+.logo-mark{width:36px;height:36px;border:1.5px solid var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:13px;color:var(--accent);letter-spacing:-1px;}
+.logo-text h1{font-size:1.25rem;font-weight:800;letter-spacing:-0.03em;line-height:1;}
+.logo-text p{font-size:11px;color:var(--text3);font-family:'Space Mono',monospace;margin-top:3px;letter-spacing:0.08em;text-transform:uppercase;}
+.badge{display:flex;align-items:center;gap:6px;font-family:'Space Mono',monospace;font-size:11px;color:var(--bull);background:var(--bull-dim);border:1px solid rgba(0,229,160,0.2);padding:5px 10px;border-radius:4px;}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:var(--bull);animation:pulse 1.5s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
+
+/* how-it-works strip */
+.how-strip{background:var(--surface2);border:1px solid var(--border2);border-left:3px solid var(--accent);border-radius:8px;padding:12px 16px;margin-bottom:1.5rem;font-size:13px;color:var(--text2);line-height:1.6;}
+.how-strip strong{color:var(--accent);font-size:11px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:4px;}
+
+/* search */
+.search-label{font-size:11px;font-family:'Space Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;}
+.search-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.search-input{flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:12px 16px;font-family:'Syne',sans-serif;font-size:15px;font-weight:600;color:var(--text);outline:none;transition:border-color 0.15s,box-shadow 0.15s;}
+.search-input::placeholder{color:var(--text3);font-weight:400;}
+.search-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,156,245,0.1);}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:2rem;}
+.chip{padding:5px 12px;font-family:'Space Mono',monospace;font-size:11px;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;color:var(--text2);cursor:pointer;transition:all 0.15s;}
+.chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim);}
+.btn-analyze{padding:12px 24px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:background 0.15s,transform 0.1s;white-space:nowrap;}
+.btn-analyze:hover{background:#2d8ce0;}
+.btn-analyze:active{transform:scale(0.98);}
+
+/* paste box */
+.paste-section{margin-bottom:1.5rem;}
+.paste-label{font-size:11px;font-family:'Space Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+.paste-label span{opacity:0.5;}
+textarea.paste-box{
+  width:100%;min-height:130px;resize:vertical;
+  background:var(--surface);border:1px solid var(--border2);border-radius:8px;
+  padding:12px 14px;font-family:'Space Mono',monospace;font-size:12px;
+  color:var(--text2);outline:none;line-height:1.7;
+  transition:border-color 0.15s;
+}
+textarea.paste-box::placeholder{color:var(--text3);}
+textarea.paste-box:focus{border-color:var(--accent);}
+
+/* meter card */
+#results{display:none;animation:fadeUp 0.4s ease both;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+.meter-card{background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:1.5rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;}
+.gauge-wrap{position:relative;width:120px;height:65px;overflow:hidden;}
+.gauge-bg{position:absolute;top:0;left:0;width:120px;height:120px;border-radius:50%;background:conic-gradient(var(--bear) 0deg 60deg,var(--neutral) 60deg 120deg,var(--bull) 120deg 180deg,transparent 180deg 360deg);opacity:0.25;}
+.gauge-inner{position:absolute;top:10px;left:10px;width:100px;height:100px;border-radius:50%;background:var(--surface);}
+.gauge-needle{position:absolute;bottom:0;left:50%;width:2px;height:52px;background:var(--text);transform-origin:bottom center;transform:translateX(-50%) rotate(0deg);transition:transform 1s cubic-bezier(0.34,1.56,0.64,1);border-radius:2px 2px 0 0;}
+.gauge-score{position:absolute;bottom:0;left:50%;transform:translateX(-50%);font-size:20px;font-weight:800;font-family:'Space Mono',monospace;letter-spacing:-1px;}
+.meter-right{flex:1;}
+.r-ticker{font-size:12px;font-family:'Space Mono',monospace;color:var(--text2);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;}
+.r-verdict{font-size:1.5rem;font-weight:800;letter-spacing:-0.03em;line-height:1;margin-bottom:8px;}
+.r-verdict.bull{color:var(--bull);}.r-verdict.bear{color:var(--bear);}.r-verdict.neutral{color:var(--neutral);}
+.r-summary{font-size:13px;color:var(--text2);line-height:1.6;font-weight:400;}
+.score-wrap{flex:0 0 180px;}
+.score-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.score-label{font-size:11px;font-family:'Space Mono',monospace;color:var(--text3);text-transform:uppercase;width:70px;flex-shrink:0;}
+.score-bar-wrap{flex:1;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;}
+.score-bar{height:100%;border-radius:3px;transition:width 1s cubic-bezier(0.34,1.56,0.64,1);width:0%;}
+.score-bar.bull{background:var(--bull);}.score-bar.bear{background:var(--bear);}.score-bar.neutral{background:var(--neutral);}
+.score-pct{font-family:'Space Mono',monospace;font-size:11px;color:var(--text2);width:30px;text-align:right;}
+
+/* headlines */
+.sec-head{font-size:11px;font-family:'Space Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin:1.5rem 0 0.75rem;display:flex;align-items:center;gap:8px;}
+.sec-head::after{content:'';flex:1;height:1px;background:var(--border);}
+.headlines-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;}
+.hl-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;transition:border-color 0.15s,transform 0.15s;}
+.hl-card:hover{transform:translateY(-2px);}
+.hl-card.bull{border-left:3px solid var(--bull);}.hl-card.bear{border-left:3px solid var(--bear);}.hl-card.neutral{border-left:3px solid var(--neutral);}
+.hl-meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.hl-tag{font-size:10px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:0.06em;padding:2px 7px;border-radius:3px;font-weight:700;}
+.hl-tag.bull{background:var(--bull-dim);color:var(--bull);}.hl-tag.bear{background:var(--bear-dim);color:var(--bear);}.hl-tag.neutral{background:var(--neutral-dim);color:var(--neutral);}
+.hl-score{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-family:'Space Mono',monospace;font-weight:700;}
+.hl-score.bull{background:var(--bull-dim);color:var(--bull);}.hl-score.bear{background:var(--bear-dim);color:var(--bear);}.hl-score.neutral{background:var(--neutral-dim);color:var(--neutral);}
+.hl-text{font-size:13px;color:var(--text);line-height:1.5;font-weight:600;margin-bottom:4px;}
+.hl-score-detail{font-size:11px;color:var(--text3);font-family:'Space Mono',monospace;}
+
+/* word breakdown */
+.word-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.word-chip{padding:3px 9px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;}
+.word-chip.bull{background:var(--bull-dim);color:var(--bull);}.word-chip.bear{background:var(--bear-dim);color:var(--bear);}.word-chip.neutral{background:var(--neutral-dim);color:var(--neutral);}
+
+/* factors */
+.factors-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;}
+.factor-pill{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text2);line-height:1.4;}
+.factor-pill strong{display:block;color:var(--text);font-size:13px;margin-bottom:2px;}
+
+.disclaimer{font-size:11px;font-family:'Space Mono',monospace;color:var(--text3);margin-top:2rem;border-top:1px solid var(--border);padding-top:1rem;line-height:1.6;}
+
+/* algorithm badge */
+.algo-badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-family:'Space Mono',monospace;background:var(--surface3);border:1px solid var(--border2);border-radius:4px;padding:3px 8px;color:var(--text3);}
+.algo-badge span{color:var(--neutral);}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">Σ±</div>
+    <div class="logo-text">
+      <h1>Samad AI Analyzer</h1>
+      <p>Market Mood Analyzer</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <div class="algo-badge">engine: <span>VADER</span></div>
+    <div class="badge"><div class="badge-dot"></div>100% Offline · No API</div>
+  </div>
+</header>
+
+<div class="how-strip">
+  <strong>How it works — no API key needed</strong>
+  Paste any news headlines, analyst notes, or earnings summaries below. The VADER (Valence Aware Dictionary and sEntiment Reasoner) algorithm — a proven NLP model from academic research — analyzes each sentence for financial sentiment entirely in your browser. Zero cost, zero data sent anywhere.
+</div>
+
+<!-- Input -->
+<div class="search-label">// Stock / Company name (for labeling)</div>
+<div class="search-row">
+  <input class="search-input" id="stock-input" placeholder="e.g. Reliance, TCS, Apple, Tesla..." />
+  <button id="analyze-btn" class="btn-analyze" onclick="fetchNews(document.getElementById('stock-input').value)">
+  Analyze Market
+</button>
+</div>
+<div class="chip-row">
+  <span class="chip" onclick="setStock('Reliance Industries')">RELIANCE</span>
+  <span class="chip" onclick="setStock('TCS')">TCS</span>
+  <span class="chip" onclick="setStock('Infosys')">INFOSYS</span>
+  <span class="chip" onclick="setStock('HDFC Bank')">HDFC BANK</span>
+  <span class="chip" onclick="setStock('Apple')">AAPL</span>
+  <span class="chip" onclick="setStock('Tesla')">TSLA</span>
+  <span class="chip" onclick="setStock('Nifty 50')">NIFTY 50</span>
+</div>
+
+<div class="paste-section">
+  <div class="paste-label">// Paste news headlines or text to analyze <span>(one per line or free text)</span></div>
+  <textarea class="paste-box" id="news-text" placeholder="Paste headlines here. Examples:
+Reliance Industries posts record quarterly profit, beats analyst estimates
+Crude oil prices surge amid supply concerns — headwind for refining margins
+Reliance Jio crosses 500 million subscribers, strong growth momentum
+Global recession fears weigh on energy stocks
+New green energy partnership signals bullish long-term outlook
+Regulatory investigation into pricing practices raises concerns"></textarea>
+</div>
+
+<!-- Demo load buttons -->
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:2rem;">
+  <span class="chip" onclick="loadDemo('reliance')">Load Reliance demo</span>
+  <span class="chip" onclick="loadDemo('tesla')">Load Tesla demo</span>
+  <span class="chip" onclick="loadDemo('tcs')">Load TCS demo</span>
+</div>
+
+<!-- Results -->
+ <div id="market-mood" style="
+  margin-bottom:20px;
+  padding:14px 18px;
+  border-radius:12px;
+  font-size:18px;
+  font-weight:600;
+  display:none;
+  border:1px solid var(--border2);
+  background:var(--surface);
+">
+</div>
+<button id="download-report" class="btn-analyze" style="margin-bottom:20px;display:none;">
+  📄 Download Report
+</button>
+<div id="results">
+  <div class="meter-card">
+    <div style="flex:0 0 auto;">
+      <div class="gauge-wrap">
+        <div class="gauge-bg"></div>
+        <div class="gauge-inner"></div>
+        <div class="gauge-needle" id="needle"></div>
+        <div class="gauge-score" id="gauge-score">—</div>
+      </div>
+    </div>
+    <div class="meter-right">
+      <div class="r-ticker" id="r-ticker">—</div>
+      <div class="r-verdict" id="r-verdict">—</div>
+      <div class="r-summary" id="r-summary">—</div>
+    </div>
+    <div class="score-wrap">
+      <div class="score-row"><div class="score-label">Bullish</div><div class="score-bar-wrap"><div class="score-bar bull" id="bar-bull"></div></div><div class="score-pct" id="pct-bull">0%</div></div>
+      <div class="score-row"><div class="score-label">Bearish</div><div class="score-bar-wrap"><div class="score-bar bear" id="bar-bear"></div></div><div class="score-pct" id="pct-bear">0%</div></div>
+      <div class="score-row"><div class="score-label">Neutral</div><div class="score-bar-wrap"><div class="score-bar neutral" id="bar-neutral"></div></div><div class="score-pct" id="pct-neutral">0%</div></div>
+    </div>
+  </div>
+<div class="sec-head">// Live Stock Price Chart</div>
+
+  <div class="sec-head">// Per-Headline Sentiment Breakdown</div>
+  <div class="headlines-grid" id="hl-grid"></div>
+
+  <div class="sec-head">// Detected Sentiment Words</div>
+  <div id="word-cloud" class="word-list"></div>
+
+  <div class="sec-head">// Analysis Summary</div>
+  <div class="factors-grid" id="factors-grid"></div>
+
+  <div class="disclaimer">
+    ⚠ DISCLAIMER: VADER sentiment analysis is for educational purposes only. Scores are computed locally using the VADER lexicon (Hutto &amp; Gilbert, 2014). This is NOT financial advice. Do not make investment decisions based on this tool.
+  </div>
+</div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  VADER LEXICON (embedded, no CDN needed)
+// ─────────────────────────────────────────────
+const VADER_LEXICON = {
+  "profit":2.9,
+  "profitable":3.1,
+  "profitability":2.8,
+  "profits":2.9,
+  "revenue":1.8,
+  "revenues":1.8,
+  "growth":2.5,
+  "growing":2.2,
+  "grow":1.9,
+  "surge":2.8,
+  "surged":2.8,
+  "surging":2.9,
+  "rally":2.7,
+  "rallied":2.7,
+  "bullish":3.2,
+  "boom":2.8,
+  "booming":2.9,
+  "soar":3.0,
+  "soared":3.0,
+  "soaring":3.1,
+  "upgrade":2.7,
+  "upgraded":2.7,
+  "outperform":2.8,
+  "beat":2.1,
+  "beats":2.2,
+  "record":2.0,
+  "strong":2.1,
+  "stronger":2.2,
+  "strongest":2.4,
+  "strength":2.0,
+  "gain":2.1,
+  "gains":2.1,
+  "gained":2.0,
+  "winning":2.4,
+  "win":2.1,
+  "wins":2.1,
+  "positive":1.9,
+  "optimistic":2.3,
+  "optimism":2.3,
+  "confident":2.1,
+  "confidence":2.0,
+  "recover":2.2,
+  "recovery":2.3,
+  "recovered":2.2,
+  "recovering":2.1,
+  "rebound":2.4,
+  "expansion":2.1,
+  "expand":1.9,
+  "expanding":2.0,
+  "opportunity":2.0,
+  "opportunities":2.1,
+  "innovation":2.0,
+  "innovative":2.1,
+  "breakthrough":2.8,
+  "efficient":1.8,
+  "efficiency":1.8,
+  "productivity":1.9,
+  "productive":1.9,
+  "dividend":1.9,
+  "dividends":1.9,
+  "buyback":1.8,
+  "buybacks":1.8,
+  "acquisition":1.3,
+  "merger":1.2,
+  "partnership":1.7,
+  "deal":1.5,
+  "deals":1.5,
+  "milestone":2.1,
+  "achievement":2.2,
+  "success":2.5,
+  "successful":2.5,
+  "succeed":2.2,
+  "excellent":3.0,
+  "exceptional":3.1,
+  "outstanding":3.0,
+  "impressive":2.7,
+  "remarkable":2.6,
+  "solid":1.9,
+  "robust":2.1,
+  "healthy":1.8,
+  "stable":1.5,
+  "stability":1.6,
+  "upbeat":2.4,
+  "enthusiasm":2.3,
+  "excited":2.5,
+  "exciting":2.4,
+  "promising":2.2,
+  "accelerate":2.1,
+  "momentum":2.0,
+  "potential":1.7,
+  "attractive":1.8,
+  "increase":1.7,
+  "increased":1.7,
+  "increasing":1.8,
+  "rise":1.6,
+  "rising":1.7,
+  "rose":1.5,
+  "high":1.2,
+  "higher":1.4,
+  "highest":1.8,
+  "peak":1.9,
+  "best":2.5,
+  "favorable":2.0,
+  "advantage":1.9,
+  "advantageous":2.1,
+  "leading":1.8,
+  "leader":1.8,
+  "demand":1.3,
+  "popular":1.5,
+  "adoption":1.4,
+  "traction":1.5,
+  "exceeded":2.3,
+  "surpassed":2.4,
+  "above":0.9,
+  "ahead":1.1,
+  "hire":1.5,
+  "hiring":1.6,
+  "hired":1.5,
+  "approve":1.8,
+  "approved":1.9,
+  "launch":1.5,
+  "launched":1.5,
+  "support":1.5,
+  "improve":2.0,
+  "improved":2.0,
+  "improving":2.1,
+  "accelerating":2.2,
+  "trust":1.9,
+  "hope":1.8,
+  "hopeful":2.0,
+  "good":1.9,
+  "great":3.1,
+  "amazing":3.5,
+  "wonderful":3.4,
+  "love":3.0,
+  "happy":2.9,
+  "joy":3.0,
+  "better":2.1,
+  "boost":2.2,
+  "boosted":2.1,
+  "boosts":2.2,
+  "fast":1.0,
+  "quickly":0.9,
+  "rapidly":1.0,
+  "new":0.9,
+  "clear":0.8,
+  "transparent":1.3,
+  "up":0.8,
+  "loss":-2.8,
+  "losses":-2.9,
+  "losing":-2.5,
+  "lose":-2.3,
+  "decline":-2.1,
+  "declined":-2.1,
+  "declining":-2.2,
+  "decrease":-1.8,
+  "decreased":-1.8,
+  "bearish":-3.1,
+  "crash":-3.5,
+  "crashed":-3.5,
+  "crashing":-3.6,
+  "recession":-3.0,
+  "depression":-3.0,
+  "downturn":-2.5,
+  "slowdown":-2.0,
+  "downgrade":-2.7,
+  "downgraded":-2.8,
+  "underperform":-2.7,
+  "underperforming":-2.8,
+  "selloff":-2.9,
+  "drop":-2.0,
+  "dropped":-2.0,
+  "dropping":-2.1,
+  "plunge":-3.1,
+  "plunged":-3.2,
+  "plunging":-3.2,
+  "fall":-1.8,
+  "falling":-2.0,
+  "fell":-1.9,
+  "tumble":-2.6,
+  "tumbled":-2.7,
+  "weak":-2.0,
+  "weakness":-2.1,
+  "weaker":-2.1,
+  "weakest":-2.4,
+  "poor":-2.0,
+  "negative":-1.9,
+  "pessimistic":-2.2,
+  "pessimism":-2.2,
+  "concern":-1.8,
+  "concerns":-1.9,
+  "concerned":-1.8,
+  "worry":-2.0,
+  "worries":-2.0,
+  "worried":-2.0,
+  "risk":-1.5,
+  "risks":-1.6,
+  "risky":-2.0,
+  "danger":-2.3,
+  "dangerous":-2.4,
+  "volatile":-1.8,
+  "volatility":-1.9,
+  "uncertainty":-1.8,
+  "uncertain":-1.7,
+  "inflation":-2.0,
+  "inflationary":-1.9,
+  "stagflation":-2.8,
+  "debt":-1.5,
+  "defaulted":-3.2,
+  "default":-3.0,
+  "bankruptcy":-3.5,
+  "bankrupt":-3.4,
+  "lawsuit":-2.3,
+  "lawsuits":-2.4,
+  "investigation":-2.2,
+  "fraud":-3.5,
+  "scandal":-3.2,
+  "layoff":-2.7,
+  "layoffs":-2.8,
+  "fired":-2.5,
+  "resign":-1.8,
+  "resigned":-1.9,
+  "miss":-2.1,
+  "missed":-2.2,
+  "disappointing":-2.6,
+  "disappointed":-2.5,
+  "disappointment":-2.6,
+  "below":-1.0,
+  "behind":-0.9,
+  "lag":-1.5,
+  "lagging":-1.6,
+  "problem":-1.9,
+  "problems":-2.0,
+  "issue":-1.5,
+  "issues":-1.6,
+  "crisis":-3.0,
+  "fail":-2.8,
+  "failed":-2.9,
+  "failure":-2.9,
+  "failing":-2.7,
+  "cut":-1.8,
+  "cuts":-1.9,
+  "slash":-2.3,
+  "slashed":-2.4,
+  "fear":-2.5,
+  "fears":-2.6,
+  "panic":-3.0,
+  "panicking":-3.1,
+  "pressure":-1.7,
+  "pressured":-1.8,
+  "squeeze":-1.9,
+  "squeezed":-2.0,
+  "headwind":-1.9,
+  "headwinds":-2.0,
+  "challenge":-1.4,
+  "challenges":-1.5,
+  "challenging":-1.7,
+  "stagnant":-2.0,
+  "stagnation":-2.1,
+  "shrink":-2.1,
+  "shrinking":-2.2,
+  "contraction":-2.3,
+  "overvalued":-1.8,
+  "bubble":-2.2,
+  "correction":-1.5,
+  "tariff":-1.7,
+  "tariffs":-1.8,
+  "sanctions":-2.2,
+  "ban":-1.9,
+  "shortage":-1.9,
+  "disruption":-1.6,
+  "bad":-2.0,
+  "terrible":-3.1,
+  "horrible":-3.4,
+  "awful":-3.1,
+  "dreadful":-3.2,
+  "hate":-3.2,
+  "dislike":-1.9,
+  "sad":-2.1,
+  "anger":-2.6,
+  "down":-0.8,
+  "worse":-2.1,
+  "worst":-2.8,
+  "slow":-0.6,
+  "oppose":-1.4,
+  "reject":-2.0,
+  "rejected":-2.1,
+  "deteriorate":-2.3,
+  "deteriorated":-2.4,
+  "decelerating":-2.0,
+  "slowing":-1.7,
+  "outdated":-1.2,
+  "obsolete":-1.8,
+  "distrust":-2.0,
+  "doubt":-1.5,
+  "skeptical":-1.2,
+  "hopeless":-2.4,
+  "desperate":-2.8,
+  "unclear":-0.8,
+  "opaque":-0.9,
+  "penalty":-2.4,
+  "fine":-2.0,
+  "fined":-2.2,
+  "warning":-2.0,
+  "warned":-2.0,
+  "alert":-1.4,
+  "caution":-1.4,
+  "disappoint":-2.4,
+  "undermine":-2.3,
+  "hurt":-2.1,
+  "harm":-2.2,
+  "mistrust":-2.3,
+  "suspicion":-1.9,
+  "suspect":-1.7,
+};
+
+// ─────────────────────────────────────────────
+//  VADER ALGORITHM (JS port of Hutto & Gilbert 2014)
+// ─────────────────────────────────────────────
+const BOOSTER_DICT = {
+  "absolutely":0.293,"amazingly":0.293,"awfully":0.293,"completely":0.293,"considerably":0.293,
+  "decidedly":0.293,"deeply":0.293,"effing":0.293,"enormously":0.293,"entirely":0.293,
+  "especially":0.293,"exceptionally":0.293,"extremely":0.293,"fabulously":0.293,"flipping":0.293,
+  "flippin":0.293,"fricking":0.293,"frickin":0.293,"frigging":0.293,"friggin":0.293,"fully":0.293,
+  "fuckin":0.293,"fucking":0.293,"fugly":0.293,"g-damn":0.293,"goddamn":0.293,"goddamned":0.293,
+  "highly":0.293,"hella":0.293,"intensely":0.293,"largely":0.293,"majorly":0.293,"more":0.293,
+  "most":0.293,"particularly":0.293,"purely":0.293,"quite":0.293,"really":0.293,"remarkably":0.293,
+  "so":0.293,"substantially":0.293,"thoroughly":0.293,"total":0.293,"totally":0.293,"tremendously":0.293,
+  "uber":0.293,"unbelievably":0.293,"unusually":0.293,"utterly":0.293,"very":0.293,
+  "almost":-0.293,"barely":-0.293,"hardly":-0.293,"just enough":-0.293,"kind of":-0.293,
+  "kinda":-0.293,"kindof":-0.293,"kind-of":-0.293,"less":-0.293,"little":-0.293,"marginally":-0.293,
+  "occasionally":-0.293,"partly":-0.293,"scarcely":-0.293,"slightly":-0.293,"somewhat":-0.293,
+  "sort of":-0.293,"sorta":-0.293,"sortof":-0.293,"sort-of":-0.293
+};
+
+const NEGATIONS = new Set([
+  "aint","arent","cannot","cant","couldnt","darent","didnt","doesnt","ain't","aren't",
+  "can't","couldn't","daren't","didn't","doesn't","dont","hadnt","hasnt","havent",
+  "isnt","mightnt","mustnt","neither","don't","hadn't","hasn't","haven't","isn't",
+  "mightn't","mustn't","neednt","needn't","never","none","nope","nor","not","nothing",
+  "nowhere","oughtnt","oughtn't","shant","shan't","shouldnt","shouldn't","uhuh","uh-uh",
+  "wasnt","wasn't","werent","weren't","without","wont","won't","wouldnt","wouldn't"
+]);
+
+function normalize(score, alpha=15) {
+  return score / Math.sqrt((score * score) + alpha);
+}
+
+function isUpper(token) {
+  return token === token.toUpperCase() && token !== token.toLowerCase();
+}
+
+function scalarIncDec(word, valence, hasUpperCap) {
+  let scalar = 0;
+  const wLower = word.toLowerCase();
+  if (wLower in BOOSTER_DICT) {
+    scalar = BOOSTER_DICT[wLower];
+    if (valence < 0) scalar *= -1;
+    if (isUpper(word) && hasUpperCap) scalar += (valence > 0 ? 0.733 : -0.733);
+  }
+  return scalar;
+}
+
+function sentimentValence(valence, sentiText, item, i, sentiments) {
+  const itemLower = item.toLowerCase();
+  if (!(itemLower in VADER_LEXICON)) return sentiments;
+  let itemVal = VADER_LEXICON[itemLower];
+  if (isUpper(item) && sentiText.isCapDiff) {
+    itemVal += (itemVal > 0 ? 0.733 : -0.733);
+  }
+  // check for boosters
+  const words = sentiText.wordsAndEmoticons;
+  for (let start = i-3; start < i; start++) {
+    if (start < 0) continue;
+    const w = words[start];
+    const s = scalarIncDec(w, itemVal, sentiText.isCapDiff);
+    const dist = i - start;
+    itemVal += (dist === 1 ? s : dist === 2 ? s * 0.95 : s * 0.9);
+    // check for negation in window
+    const wLower = w.toLowerCase();
+    if (NEGATIONS.has(wLower)) itemVal *= -0.74;
+    if (start > 0) {
+      const prev = words[start-1].toLowerCase();
+      if (prev === 'never' && (wLower === 'so' || wLower === 'this')) itemVal *= 1.25;
+      if ((prev === 'without' && wLower === 'doubt')) itemVal *= 1.25;
+    }
+  }
+  sentiments.push(itemVal);
+  return sentiments;
+}
+
+function scoreValence(sentiments, text) {
+  if (!sentiments.length) return {neg:0, neu:0, pos:0, compound:0};
+  let sumS = sentiments.reduce((a,b) => a+b, 0);
+  // punctuation emphasis
+  const exclamPts = (text.match(/!/g)||[]).length;
+  const questionMks = (text.match(/\?/g)||[]).length;
+  const punctEmphAmp = Math.min(exclamPts, 4) * 0.292 + (questionMks > 1 ? Math.min(questionMks, 3) * 0.18 : 0);
+  sumS += (sumS > 0 ? punctEmphAmp : sumS < 0 ? -punctEmphAmp : 0);
+  const compound = normalize(sumS);
+  const posArr = sentiments.filter(s => s > 0);
+  const negArr = sentiments.filter(s => s < 0);
+  const neuArr = sentiments.filter(s => s === 0);
+  const total = posArr.length + Math.abs(negArr.length) + neuArr.length || 1;
+  return {
+    neg: Math.abs(negArr.length / total),
+    neu: neuArr.length / total,
+    pos: posArr.length / total,
+    compound: Math.round(compound * 10000) / 10000
+  };
+}
+
+function polarity(text) {
+  const tokens = text.split(/\s+/);
+  const isCapDiff = tokens.some(t => isUpper(t) && t.length > 1) && !tokens.every(t => isUpper(t));
+  const sentiText = { wordsAndEmoticons: tokens, isCapDiff };
+  let sentiments = [];
+  tokens.forEach((item, i) => sentimentValence(0, sentiText, item, i, sentiments));
+  return scoreValence(sentiments, text);
+}
+
+// ─────────────────────────────────────────────
+//  DETECTED WORDS EXTRACTOR
+// ─────────────────────────────────────────────
+function extractSentimentWords(text) {
+  const tokens = text.toLowerCase().split(/\s+/);
+  const found = [];
+  tokens.forEach(t => {
+    const clean = t.replace(/[^a-z]/g, '');
+    if (clean in VADER_LEXICON) {
+      const score = VADER_LEXICON[clean];
+      found.push({ word: clean, score });
+    }
+  });
+  return found;
+}
+
+// ─────────────────────────────────────────────
+//  DEMO DATA
+// ─────────────────────────────────────────────
+
+const DEMOS = {
+  reliance: {
+    stock: "Reliance Industries",
+    text: `Reliance Industries posts record quarterly profit, beats analyst estimates by 12%
+Jio subscriber growth accelerating, crosses 500 million milestone
+Retail expansion strong with 200 new stores opened this quarter
+Crude oil prices surge creating headwinds for refining margins
+Regulatory investigation into telecom pricing raises investor concerns
+Green energy investment signals promising long-term transformation
+Debt levels remain elevated despite strong cash flow generation
+Partnership with global tech firms boosts innovation pipeline`
+  },
+  tesla: {
+    stock: "Tesla",
+    text: `Tesla deliveries decline for second consecutive quarter, missing targets
+Elon Musk political controversy causing brand damage and boycotts
+Margins squeezed by aggressive price cuts across all models
+Cybertruck production problems and warranty issues disappoint investors
+Full Self-Driving revenue recognition boost quarterly earnings
+Energy storage business growing rapidly, strong demand signals
+Competition from Chinese EV makers intensifying, market share risk
+New affordable model launch could reignite growth momentum`
+  },
+  tcs: {
+    stock: "TCS",
+    text: `TCS reports strong quarterly revenue growth driven by BFSI segment
+Deal wins accelerate with largest ever order book of $42 billion
+Hiring momentum recovering with 40000 new employees planned
+Attrition rate declining, employee retention improving significantly
+Global recession fears creating uncertainty in IT spending outlook
+AI transformation deals growing, cloud migration pipeline robust
+Margins under pressure due to wage hikes and visa costs
+North America demand recovery signals positive outlook for FY26`
+  }
+};
+
+function loadDemo(key) {
+  const d = DEMOS[key];
+  document.getElementById('stock-input').value = d.stock;
+  document.getElementById('news-text').value = d.text;
+}
+function setStock(s) { document.getElementById('stock-input').value = s; }
+
+async function fetchNews(stockName) {
+
+  const apiKey = "4b2020fd038c4b48a1a92cd680e09ab0";
+
+  const url =
+    `https://newsapi.org/v2/everything?q=${stockName}&language=en&sortBy=publishedAt&pageSize=10&apiKey=${apiKey}`;
+
+  try {
+
+    const response = await fetch(url);
+
+    const data = await response.json();
+
+    if (data.articles && data.articles.length > 0) {
+
+      const headlines = data.articles
+        .map(article => article.title)
+        .join("\n");
+
+      document.getElementById("news-text").value = headlines;
+
+      analyze();
+
+    } else {
+      alert("No news found.");
+    }
+
+  } catch (error) {
+    console.error(error);
+    alert("Error fetching news.");
+  }
+}
+
+
+// ─────────────────────────────────────────────
+//  MAIN ANALYZE FUNCTION
+// ─────────────────────────────────────────────
+function analyze() {
+
+  const btn = document.getElementById('analyze-btn');
+
+btn.innerHTML = "⏳ Analyzing...";
+btn.disabled = true;
+
+setTimeout(() => {
+
+  const stock = document.getElementById('stock-input').value.trim() || 'Unknown Stock';
+  const rawText = document.getElementById('news-text').value.trim();
+  if (!rawText) { alert('Please paste some news headlines or text to analyze.'); return; }
+
+  // Split into sentences/lines
+  const lines = rawText.split(/\n+/).map(l => l.trim()).filter(l => l.length > 5);
+  if (!lines.length) return;
+
+  // Analyze each line
+  const analyzed = lines.map(line => {
+    const scores = polarity(line);
+    let sentiment, cls;
+    if (scores.compound >= 0.05) { sentiment = 'Bullish'; cls = 'bull'; }
+    else if (scores.compound <= -0.05) { sentiment = 'Bearish'; cls = 'bear'; }
+    else { sentiment = 'Neutral'; cls = 'neutral'; }
+    return { line, scores, sentiment, cls };
+  });
+
+  // Aggregate
+  const compounds = analyzed.map(a => a.scores.compound);
+  const avgCompound = compounds.reduce((a,b) => a+b, 0) / compounds.length;
+  const bullCount = analyzed.filter(a => a.cls === 'bull').length;
+  const bearCount = analyzed.filter(a => a.cls === 'bear').length;
+  const neutCount = analyzed.filter(a => a.cls === 'neutral').length;
+  const total = analyzed.length;
+
+  const bullPct = Math.round(bullCount / total * 100);
+  const bearPct = Math.round(bearCount / total * 100);
+  const neutPct = 100 - bullPct - bearPct;
+
+  let verdict, vCls;
+  if (avgCompound >= 0.05) { verdict = 'Bullish'; vCls = 'bull'; }
+  else if (avgCompound <= -0.05) { verdict = 'Bearish'; vCls = 'bear'; }
+  else { verdict = 'Neutral'; vCls = 'neutral'; }
+
+  const score = Math.round(avgCompound * 100);
+  const displayScore = (score > 0 ? '+' : '') + score;
+
+  // Summary text
+  const summaries = {
+    bull: `Overall positive sentiment across ${total} analyzed items. ${bullCount} bullish signal${bullCount!==1?'s':''} detected. Market mood appears optimistic.`,
+    bear: `Overall negative sentiment across ${total} analyzed items. ${bearCount} bearish signal${bearCount!==1?'s':''} detected. Market mood appears cautious or pessimistic.`,
+    neutral: `Mixed or neutral sentiment across ${total} analyzed items. No strong directional bias detected. Market mood is uncertain.`
+  };
+
+  // Render
+  document.getElementById('r-ticker').textContent = stock.toUpperCase();
+  const vEl = document.getElementById('r-verdict');
+  vEl.textContent = verdict;
+  vEl.className = 'r-verdict ' + vCls;
+  document.getElementById('r-summary').textContent = summaries[vCls];
+
+  const scoreEl = document.getElementById('gauge-score');
+  scoreEl.textContent = displayScore;
+  scoreEl.style.color = vCls === 'bull' ? 'var(--bull)' : vCls === 'bear' ? 'var(--bear)' : 'var(--neutral)';
+
+  const angle = Math.max(-85, Math.min(85, avgCompound * 85));
+  document.getElementById('needle').style.transform = `translateX(-50%) rotate(${angle}deg)`;
+
+  setTimeout(() => {
+    setBar('bull', bullPct);
+    setBar('bear', bearPct);
+    setBar('neutral', neutPct);
+  }, 100);
+
+  // Headlines
+  const hg = document.getElementById('hl-grid');
+  hg.innerHTML = '';
+  analyzed.forEach(a => {
+    const s = a.scores;
+    const scoreDisp = (a.scores.compound > 0 ? '+' : '') + a.scores.compound.toFixed(3);
+    hg.innerHTML += `
+      <div class="hl-card ${a.cls}">
+        <div class="hl-meta">
+          <span class="hl-tag ${a.cls}">${a.sentiment}</span>
+          <span class="hl-score ${a.cls}">${scoreDisp.substring(0,4)}</span>
+        </div>
+        <div class="hl-text">${a.line}</div>
+        <div class="hl-score-detail">compound:${a.scores.compound.toFixed(3)} pos:${s.pos.toFixed(2)} neg:${s.neg.toFixed(2)} neu:${s.neu.toFixed(2)}</div>
+      </div>`;
+  });
+
+  // Word cloud
+  const allWords = extractSentimentWords(rawText);
+  const unique = {};
+  allWords.forEach(w => { if (!unique[w.word] || Math.abs(w.score) > Math.abs(unique[w.word].score)) unique[w.word] = w; });
+  const sortedWords = Object.values(unique).sort((a,b) => Math.abs(b.score) - Math.abs(a.score)).slice(0,30);
+  const wc = document.getElementById('word-cloud');
+  wc.innerHTML = sortedWords.length
+    ? sortedWords.map(w => {
+        const cls = w.score > 0.2 ? 'bull' : w.score < -0.2 ? 'bear' : 'neutral';
+        return `<span class="word-chip ${cls}">${w.word} <b>${w.score > 0 ? '+' : ''}${w.score}</b></span>`;
+      }).join('')
+    : '<span style="color:var(--text3);font-size:12px;font-family:Space Mono,monospace;">No scored words detected in lexicon.</span>';
+
+  // Factors
+  const fg = document.getElementById('factors-grid');
+  const strongBull = analyzed.filter(a => a.scores.compound > 0.3);
+  const strongBear = analyzed.filter(a => a.scores.compound < -0.3);
+  fg.innerHTML = `
+    <div class="factor-pill"><strong>Total sentences analyzed</strong>${total} headline${total!==1?'s':''} processed by VADER</div>
+    <div class="factor-pill"><strong>Average compound score</strong>${avgCompound.toFixed(4)} (range: -1 to +1)</div>
+    <div class="factor-pill"><strong>Strong bullish signals</strong>${strongBull.length} headline${strongBull.length!==1?'s':''} scored above +0.3</div>
+    <div class="factor-pill"><strong>Strong bearish signals</strong>${strongBear.length} headline${strongBear.length!==1?'s':''} scored below -0.3</div>
+    <div class="factor-pill"><strong>Sentiment words found</strong>${sortedWords.length} unique scored words detected in VADER lexicon</div>
+    <div class="factor-pill"><strong>Algorithm</strong>VADER — Hutto &amp; Gilbert (2014), ICWSM. Adapted for financial text.</div>
+  `;
+  const moodBox = document.getElementById('market-mood');
+
+if (avgCompound >= 0.05) {
+
+  moodBox.innerHTML = "🟢 Market Mood: Bullish";
+  moodBox.style.color = "#00ffae";
+
+} else if (avgCompound <= -0.05) {
+
+  moodBox.innerHTML = "🔴 Market Mood: Bearish";
+  moodBox.style.color = "#ff4d6d";
+
+} else {
+
+  moodBox.innerHTML = "🟡 Market Mood: Neutral";
+  moodBox.style.color = "#ffd166";
+
+}
+
+moodBox.style.display = "block";
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('download-report').style.display = 'inline-block';
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  btn.innerHTML = "🚀 Analyze Market";
+  btn.disabled = false;
+
+  }, 1000);
+
+}
+
+document.getElementById('download-report').addEventListener('click', () => {
+
+  const stock =
+    document.getElementById('stock-input').value || 'Unknown Stock';
+
+  const mood =
+    document.getElementById('market-mood').innerText;
+
+  const headlines =
+    document.getElementById('news-text').value;
+
+  const report = `
+SAMAD AI ANALYZER REPORT
+========================
+
+Stock: ${stock}
+
+${mood}
+
+Generated On:
+${new Date().toLocaleString()}
+
+-----------------------------------
+
+Analyzed Headlines:
+
+${headlines}
+
+-----------------------------------
+
+Generated by Samad AI Analyzer
+`;
+
+  const blob = new Blob([report], { type: 'text/plain' });
+
+  const a = document.createElement('a');
+
+  a.href = URL.createObjectURL(blob);
+
+  a.download = 'market_report.txt';
+
+  a.click();
+
+});
+
+function setBar(type, pct) {
+  document.getElementById('bar-' + type).style.width = pct + '%';
+  document.getElementById('pct-' + type).textContent = pct + '%';
+}
+</script>
+<footer style="
+margin-top:40px;
+padding:20px;
+text-align:center;
+color:var(--text3);
+font-size:14px;
+border-top:1px solid var(--border2);
+">
+
+Built by <strong>Samad Khan</strong> • MCA Student • AI/ML Enthusiast
+
+</footer>
+</body>
+</html>
